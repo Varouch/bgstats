@@ -182,7 +182,7 @@ footer { margin-top: 28px; color: var(--text-muted); font-size: 12px; }
     <section class="card s7"><h2>Partie podle roku <small id="yearHint">klikni na sloupec pro filtr</small></h2><div id="yearChart"></div></section>
     <section class="card s5"><h2>Lokality <small>počet partií · klikni pro filtr</small></h2><div class="hbars" id="locBars"></div></section>
 
-    <section class="card s12"><h2>Partie po měsících</h2><div class="heat" id="heat"></div></section>
+    <section class="card s12"><h2>Hodiny hraní po měsících</h2><div class="heat" id="heat"></div></section>
 
     <section class="card s4"><h2>Den v týdnu</h2><div id="dowChart"></div></section>
     <section class="card s4"><h2>Počet hráčů</h2><div id="pcChart"></div></section>
@@ -398,7 +398,7 @@ function renderHeat() {
   const P = PLAYS.filter(byLoc);
   const years = state.year === "all" ? YEARS : [state.year];
   const grid = {}; let max = 1;
-  P.forEach(p => { const k = p.y + "-" + p.m; grid[k] = (grid[k] || 0) + 1; });
+  P.forEach(p => { const k = p.y + "-" + p.m; grid[k] = (grid[k] || 0) + p.dur / 60; });
   years.forEach(y => { for (let m = 0; m < 12; m++) max = Math.max(max, grid[y + "-" + m] || 0); });
   const box = document.getElementById("heat"); box.replaceChildren();
   const add = (cls, txt) => { const d = document.createElement("div"); d.className = cls; d.textContent = txt; box.append(d); return d; };
@@ -409,10 +409,10 @@ function renderHeat() {
     for (let m = 0; m < 12; m++) {
       const v = grid[y + "-" + m] || 0; tot += v;
       const t = v / max;
-      const c = add("c " + (t > .55 ? "dark" : "light"), v || "");
+      const c = add("c " + (t > .55 ? "dark" : "light"), v ? fmt(v) : "");
       c.style.background = v ? `color-mix(in oklab, var(--series-1) ${Math.round(12 + 88 * t)}%, var(--surface-2))` : "var(--surface-2)";
       if (!v) c.style.color = "transparent";
-      c.addEventListener("pointermove", e => showTip(e, fmt(v), `${MONTHS[m]} ${y} · partií`));
+      c.addEventListener("pointermove", e => showTip(e, v.toFixed(1).replace(".", ","), `${MONTHS[m]} ${y} · hodin`));
       c.addEventListener("pointerleave", hideTip);
     }
     add("tot", fmt(tot));
