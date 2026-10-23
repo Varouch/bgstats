@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deskovky statistiky</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f3ef;
+  --surface-1: #fcfcfb;
+  --surface-2: #efeee9;
+  --border: #e2e0d9;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --series-1: #2a78d6;
+  --series-1-soft: #b7d3f6;
+  --accent: #2a78d6;
+  --shadow: 0 1px 2px rgb(0 0 0 / .05), 0 2px 8px rgb(0 0 0 / .04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211;
+    --surface-1: #1a1a19;
+    --surface-2: #252523;
+    --border: #2f2f2c;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --series-1: #3987e5;
+    --series-1-soft: #1c5cab;
+    --accent: #5598e7;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211;
+  --surface-1: #1a1a19;
+  --surface-2: #252523;
+  --border: #2f2f2c;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --series-1: #3987e5;
+  --series-1-soft: #1c5cab;
+  --accent: #5598e7;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 64px; }
+header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+h1 { font-size: 26px; margin: 0; letter-spacing: -.02em; }
+.sub { color: var(--text-secondary); margin-top: 2px; }
+h2 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+h2 small { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 20px;
+  position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.chip:hover { background: var(--surface-2); }
+.chip[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+.chip .n { color: var(--text-muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.chip[aria-pressed="true"] .n { color: inherit; opacity: .7; }
+select { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-primary); }
+.flabel { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+.theme { margin-left: auto; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+.kpi .v { font-size: 28px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 13px; color: var(--text-secondary); }
+.kpi .h { font-size: 12px; color: var(--text-muted); }
+
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.s4 { grid-column: span 4; } .s5 { grid-column: span 5; } .s6 { grid-column: span 6; } .s7 { grid-column: span 7; } .s8 { grid-column: span 8; } .s12 { grid-column: span 12; }
+@media (max-width: 900px) { .s4, .s5, .s6, .s7, .s8 { grid-column: span 12; } }
+
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .val { fill: var(--text-secondary); font-size: 11px; }
+svg .grid-l { stroke: var(--border); stroke-width: 1; }
+svg .bar { fill: var(--series-1); }
+svg .bar.dim { fill: var(--series-1-soft); }
+svg .hit { fill: transparent; cursor: pointer; }
+svg .hit:hover + .bar, svg g:hover .bar { filter: brightness(1.15); }
+
+.hbars { display: flex; flex-direction: column; gap: 6px; }
+.hb { display: grid; grid-template-columns: minmax(90px, 160px) 1fr 52px; align-items: center; gap: 10px;
+  padding: 3px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; border: 0; background: none; font: inherit; color: inherit; text-align: left; }
+.hb:hover { background: var(--surface-2); }
+.hb .nm { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb .tr { height: 14px; }
+.hb .fl { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; min-width: 2px; }
+.hb.dim .fl { background: var(--series-1-soft); }
+.hb.sel .nm { font-weight: 650; }
+.hb .nv { font-size: 13px; color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+
+.heat { display: grid; grid-template-columns: 36px repeat(12, minmax(0, 1fr)) 40px; gap: 2px; font-size: 11px; }
+.heat .hd { color: var(--text-muted); text-align: center; padding-bottom: 2px; }
+.heat .yr { color: var(--text-muted); display: flex; align-items: center; }
+.heat .tot { color: var(--text-secondary); display: flex; align-items: center; justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.heat .c { height: 26px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+  font-variant-numeric: tabular-nums; font-size: 10px; cursor: default; }
+.heat .c.light { color: #0b0b0b; } .heat .c.dark { color: #fff; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--text-muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  cursor: pointer; user-select: none; white-space: nowrap; }
+th.num, td.num { text-align: right; }
+th[aria-sort]::after { content: " ↓"; } th[aria-sort="ascending"]::after { content: " ↑"; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.game { display: flex; align-items: center; gap: 10px; min-width: 180px; }
+td.game img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; background: var(--surface-2); flex: none; }
+td.game a { color: inherit; text-decoration: none; } td.game a:hover { text-decoration: underline; }
+.rank { color: var(--text-muted); width: 28px; }
+.mini { display: inline-block; height: 6px; background: var(--series-1); border-radius: 0 3px 3px 0; vertical-align: middle; margin-left: 6px; }
+.tablewrap { overflow-x: auto; }
+.more { margin-top: 10px; }
+.btn { border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.muted { color: var(--text-muted); }
+.search { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-primary); width: 180px; }
+.cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.cardhead h2 { margin: 0; }
+
+#tip { position: fixed; pointer-events: none; z-index: 50; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); opacity: 0; transition: opacity .1s; }
+#tip b { display: block; font-size: 15px; color: var(--text-primary); }
+#tip span { color: var(--text-secondary); }
+footer { margin-top: 28px; color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Deskovky</h1>
+      <div class="sub" id="sub"></div>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div><span class="flabel">Lokalita</span></div>
+    <div class="chips" id="locChips"></div>
+    <div><span class="flabel">Rok</span><select id="yearSel"></select></div>
+    <button class="btn theme" id="themeBtn" type="button">Motiv</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <section class="card s7"><h2>Partie podle roku <small id="yearHint">klikni na sloupec pro filtr</small></h2><div id="yearChart"></div></section>
+    <section class="card s5"><h2>Lokality <small>počet partií · klikni pro filtr</small></h2><div class="hbars" id="locBars"></div></section>
+
+    <section class="card s12"><h2>Partie po měsících</h2><div class="heat" id="heat"></div></section>
+
+    <section class="card s4"><h2>Den v týdnu</h2><div id="dowChart"></div></section>
+    <section class="card s4"><h2>Počet hráčů</h2><div id="pcChart"></div></section>
+    <section class="card s4"><h2>Délka partie</h2><div id="durChart"></div></section>
+
+    <section class="card s12">
+      <div class="cardhead"><h2>Hry <small id="gamesCount"></small></h2><input class="search" id="gameSearch" type="search" placeholder="Hledat hru…"></div>
+      <div class="tablewrap"><table id="gamesTbl"></table></div>
+      <div class="more"><button class="btn" id="gamesMore" type="button"></button></div>
+    </section>
+
+    <section class="card s7">
+      <h2>Spoluhráči <small id="playersCount"></small></h2>
+      <div class="tablewrap"><table id="playersTbl"></table></div>
+      <div class="more"><button class="btn" id="playersMore" type="button"></button></div>
+    </section>
+    <section class="card s5">
+      <h2>Poslední partie</h2>
+      <div class="tablewrap"><table id="recentTbl"></table></div>
+    </section>
+  </div>
+  <footer id="foot"></footer>
+</div>
+<div id="tip" role="tooltip"></div>
+
+<script src="data.js"></script>
+<script>
+const BG = window.BG;
+const ME = BG.me;
+const LOC_NONE = 0;
+const locName = id => id === LOC_NONE ? "Neuvedeno" : (BG.locations[id] || "?");
+const nf = new Intl.NumberFormat("cs-CZ");
+const fmt = n => nf.format(Math.round(n));
+const pct = (a, b) => b ? Math.round(100 * a / b) + " %" : "–";
+const MONTHS = ["led", "úno", "bře", "dub", "kvě", "čvn", "čvc", "srp", "zář", "říj", "lis", "pro"];
+const DOW = ["Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
+
+// Rozbalení partií do objektů
+const PLAYS = BG.plays.map(([date, g, loc, dur, ps, exp]) => ({
+  date, y: +date.slice(0, 4), m: +date.slice(5, 7) - 1,
+  dow: (new Date(date.slice(0, 10) + "T12:00:00").getDay() + 6) % 7,
+  g, loc, dur, ps, exp,
+  meIn: ps.some(p => p[0] === ME),
+  meWin: ps.some(p => p[0] === ME && p[1]),
+}));
+const YEARS = [...new Set(PLAYS.map(p => p.y))].sort();
+const firstPlayOfGame = {};
+PLAYS.forEach((p, i) => { if (!(p.g in firstPlayOfGame)) firstPlayOfGame[p.g] = i; });
+PLAYS.forEach((p, i) => p.first = firstPlayOfGame[p.g] === i);
+
+const state = { loc: "all", year: "all", gamesLimit: 20, playersLimit: 15, gameSort: ["plays", -1], playerSort: ["plays", -1], q: "" };
+
+// ---------- tooltip ----------
+const tip = document.getElementById("tip");
+function showTip(ev, value, label) {
+  tip.replaceChildren();
+  const b = document.createElement("b"); b.textContent = value;
+  const s = document.createElement("span"); s.textContent = label;
+  tip.append(b, s);
+  const x = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  const y = ev.clientY - tip.offsetHeight - 12;
+  tip.style.left = x + "px"; tip.style.top = (y < 4 ? ev.clientY + 18 : y) + "px";
+  tip.style.opacity = 1;
+}
+function hideTip() { tip.style.opacity = 0; }
+
+// ---------- vertikální sloupcový graf (SVG) ----------
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+}
+function barChart(container, items, { height = 200, onClick, selected, unit = "partií", showVals = true } = {}) {
+  const W = Math.max(280, container.clientWidth || 600), H = height, padL = 34, padB = 22, padT = 16;
+  const max = niceMax(Math.max(...items.map(i => i.v), 1));
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  const plotW = W - padL, plotH = H - padB - padT;
+  for (let k = 0; k <= 4; k++) {
+    const y = padT + plotH - plotH * k / 4;
+    el("line", { x1: padL, x2: W, y1: y, y2: y, class: "grid-l" }, svg);
+    const t = el("text", { x: padL - 6, y: y + 4, "text-anchor": "end" }, svg); t.textContent = fmt(max * k / 4);
+  }
+  const slot = plotW / items.length, bw = Math.max(2, Math.min(56, slot - 2));
+  const anySel = selected != null;
+  items.forEach((it, i) => {
+    const x = padL + i * slot + (slot - bw) / 2;
+    const h = plotH * it.v / max, y = padT + plotH - h;
+    const g = el("g", { tabindex: 0 }, svg);
+    if (h > 0) {
+      const r = Math.min(4, bw / 2, h);
+      el("path", {
+        class: "bar" + (anySel && selected !== it.key ? " dim" : ""),
+        d: `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${y + h}Z`,
+      }, g);
+    }
+    const lab = el("text", { x: x + bw / 2, y: H - 6, "text-anchor": "middle" }, g); lab.textContent = it.label;
+    if (showVals && it.v > 0 && items.length <= 16) {
+      const vt = el("text", { x: x + bw / 2, y: y - 4, "text-anchor": "middle", class: "val" }, g); vt.textContent = fmt(it.v);
+    }
+    const hit = el("rect", { x: padL + i * slot, y: padT, width: slot, height: plotH + padB, class: "hit" }, g);
+    hit.style.cursor = onClick ? "pointer" : "default";
+    const tipLabel = (it.tip || it.label) + " · " + unit;
+    g.addEventListener("pointermove", e => showTip(e, fmt(it.v), tipLabel));
+    g.addEventListener("pointerleave", hideTip);
+    g.addEventListener("focus", () => { const r = g.getBoundingClientRect(); showTip({ clientX: r.left + r.width / 2, clientY: r.top }, fmt(it.v), tipLabel); });
+    g.addEventListener("blur", hideTip);
+    if (onClick) {
+      g.addEventListener("click", () => onClick(it.key));
+      g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(it.key); } });
+    }
+  });
+  container.replaceChildren(svg);
+}
+
+// ---------- filtry ----------
+const byLoc = p => state.loc === "all" || p.loc === state.loc;
+const byYear = p => state.year === "all" || p.y === state.year;
+
+function setLoc(l) { state.loc = state.loc === l ? "all" : l; reset(); render(); }
+function setYear(y) { state.year = state.year === y ? "all" : y; reset(); render(); }
+function reset() { state.gamesLimit = 20; state.playersLimit = 15; }
+
+function renderFilters() {
+  const yearPlays = PLAYS.filter(byYear);
+  const cnt = {};
+  yearPlays.forEach(p => cnt[p.loc] = (cnt[p.loc] || 0) + 1);
+  const locs = Object.keys(cnt).map(Number).sort((a, b) => cnt[b] - cnt[a]);
+  if (state.loc !== "all" && !locs.includes(state.loc)) locs.push(state.loc);
+  const chips = document.getElementById("locChips");
+  chips.replaceChildren();
+  const mk = (key, name, n) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button";
+    b.setAttribute("aria-pressed", state.loc === key);
+    b.append(name);
+    const s = document.createElement("span"); s.className = "n"; s.textContent = fmt(n || 0); b.append(s);
+    b.onclick = () => { state.loc = key; reset(); render(); };
+    chips.append(b);
+  };
+  mk("all", "Vše", yearPlays.length);
+  locs.forEach(l => mk(l, locName(l), cnt[l]));
+
+  const sel = document.getElementById("yearSel");
+  sel.replaceChildren();
+  const o = new Option("Všechny roky", "all"); sel.add(o);
+  [...YEARS].reverse().forEach(y => sel.add(new Option(y, y)));
+  sel.value = state.year;
+}
+document.getElementById("yearSel").onchange = e => { state.year = e.target.value === "all" ? "all" : +e.target.value; reset(); render(); };
+
+// ---------- KPI ----------
+function renderKpis(P) {
+  const games = new Map();
+  P.forEach(p => games.set(p.g, (games.get(p.g) || 0) + 1));
+  const counts = [...games.values()].sort((a, b) => b - a);
+  let h = 0; while (h < counts.length && counts[h] >= h + 1) h++;
+  const mins = P.reduce((s, p) => s + p.dur, 0);
+  const co = new Set(); P.forEach(p => p.ps.forEach(x => x[0] !== ME && co.add(x[0])));
+  const mine = P.filter(p => p.meIn), wins = mine.filter(p => p.meWin).length;
+  const days = new Set(P.map(p => p.date.slice(0, 10))).size;
+  const newG = P.filter(p => p.first).length;
+  const kpis = [
+    [fmt(P.length), "Partií", `${fmt(days)} herních dní`],
+    [fmt(games.size), "Různých her", `${fmt(newG)} poprvé hraných`],
+    [fmt(mins / 60), "Hodin hraní", P.length ? `průměr ${fmt(mins / P.length)} min` : ""],
+    [fmt(co.size), "Spoluhráčů", ""],
+    [pct(wins, mine.length), "Moje výhry", `${fmt(wins)} z ${fmt(mine.length)}`],
+    [fmt(h), "H-index", `${h} her hraných aspoň ${h}×`],
+  ];
+  const box = document.getElementById("kpis"); box.replaceChildren();
+  kpis.forEach(([v, l, hh]) => {
+    const d = document.createElement("div"); d.className = "kpi";
+    [["v", v], ["l", l], ["h", hh]].forEach(([c, t]) => { const x = document.createElement("div"); x.className = c; x.textContent = t; d.append(x); });
+    box.append(d);
+  });
+}
+
+// ---------- grafy ----------
+function renderYearChart() {
+  const P = PLAYS.filter(byLoc);
+  const items = YEARS.map(y => ({ key: y, label: String(y), v: P.filter(p => p.y === y).length }));
+  barChart(document.getElementById("yearChart"), items, { onClick: setYear, selected: state.year === "all" ? null : state.year });
+}
+
+function renderLocBars() {
+  const P = PLAYS.filter(byYear);
+  const cnt = {}; P.forEach(p => cnt[p.loc] = (cnt[p.loc] || 0) + 1);
+  const locs = Object.keys(cnt).map(Number).sort((a, b) => cnt[b] - cnt[a]);
+  const max = Math.max(...Object.values(cnt), 1);
+  const box = document.getElementById("locBars"); box.replaceChildren();
+  locs.forEach(l => {
+    const b = document.createElement("button"); b.type = "button";
+    b.className = "hb" + (state.loc !== "all" && state.loc !== l ? " dim" : "") + (state.loc === l ? " sel" : "");
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = locName(l);
+    const tr = document.createElement("span"); tr.className = "tr";
+    const fl = document.createElement("span"); fl.className = "fl"; fl.style.display = "block"; fl.style.width = (100 * cnt[l] / max) + "%"; tr.append(fl);
+    const nv = document.createElement("span"); nv.className = "nv"; nv.textContent = fmt(cnt[l]);
+    b.append(nm, tr, nv);
+    b.title = `${locName(l)}: ${cnt[l]} partií (${pct(cnt[l], P.length)})`;
+    b.onclick = () => setLoc(l);
+    box.append(b);
+  });
+}
+
+function renderHeat() {
+  const P = PLAYS.filter(byLoc);
+  const years = state.year === "all" ? YEARS : [state.year];
+  const grid = {}; let max = 1;
+  P.forEach(p => { const k = p.y + "-" + p.m; grid[k] = (grid[k] || 0) + 1; });
+  years.forEach(y => { for (let m = 0; m < 12; m++) max = Math.max(max, grid[y + "-" + m] || 0); });
+  const box = document.getElementById("heat"); box.replaceChildren();
+  const add = (cls, txt) => { const d = document.createElement("div"); d.className = cls; d.textContent = txt; box.append(d); return d; };
+  add("hd", ""); MONTHS.forEach(m => add("hd", m)); add("hd", "celkem");
+  years.forEach(y => {
+    add("yr", y);
+    let tot = 0;
+    for (let m = 0; m < 12; m++) {
+      const v = grid[y + "-" + m] || 0; tot += v;
+      const t = v / max;
+      const c = add("c " + (t > .55 ? "dark" : "light"), v || "");
+      c.style.background = v ? `color-mix(in oklab, var(--series-1) ${Math.round(12 + 88 * t)}%, var(--surface-2))` : "var(--surface-2)";
+      if (!v) c.style.color = "transparent";
+      c.addEventListener("pointermove", e => showTip(e, fmt(v), `${MONTHS[m]} ${y} · partií`));
+      c.addEventListener("pointerleave", hideTip);
+    }
+    add("tot", fmt(tot));
+  });
+}
+
+function renderSmallCharts(P) {
+  const dow = DOW.map((d, i) => ({ key: i, label: d, v: P.filter(p => p.dow === i).length }));
+  barChart(document.getElementById("dowChart"), dow, { height: 180 });
+
+  const pc = {}; P.forEach(p => { const n = Math.min(p.ps.length, 6); pc[n] = (pc[n] || 0) + 1; });
+  const pcItems = [1, 2, 3, 4, 5, 6].map(n => ({ key: n, label: n === 6 ? "6+" : String(n), tip: (n === 6 ? "6+" : n) + " hráčů", v: pc[n] || 0 }));
+  barChart(document.getElementById("pcChart"), pcItems, { height: 180 });
+
+  const bins = [[0, 30, "<30"], [30, 60, "30–60"], [60, 90, "60–90"], [90, 120, "90–120"], [120, 180, "2–3 h"], [180, 1e9, "3 h+"]];
+  const withDur = P.filter(p => p.dur > 0);
+  const durItems = bins.map(([a, b, l]) => ({ key: l, label: l, tip: l + " min", v: withDur.filter(p => p.dur >= a && p.dur < b).length }));
+  barChart(document.getElementById("durChart"), durItems, { height: 180 });
+}
+
+// ---------- tabulky ----------
+function sortableTable(tbl, cols, rows, sortState, rerender) {
+  tbl.replaceChildren();
+  const thead = tbl.createTHead().insertRow();
+  cols.forEach(c => {
+    const th = document.createElement("th"); th.textContent = c.label;
+    if (c.num) th.className = "num";
+    if (c.key) {
+      if (sortState[0] === c.key) th.setAttribute("aria-sort", sortState[1] < 0 ? "descending" : "ascending");
+      th.onclick = () => { if (sortState[0] === c.key) sortState[1] *= -1; else { sortState[0] = c.key; sortState[1] = c.num ? -1 : 1; } rerender(); };
+    } else th.style.cursor = "default";
+    thead.append(th);
+  });
+  const tb = tbl.createTBody();
+  rows.forEach((r, i) => {
+    const tr = tb.insertRow();
+    cols.forEach(c => {
+      const td = tr.insertCell();
+      if (c.num) td.className = "num";
+      c.cell(td, r, i);
+    });
+  });
+}
+function sortRows(rows, [key, dir]) {
+  return rows.sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (typeof x === "string") return dir * x.localeCompare(y, "cs");
+    return dir * ((x ?? -1) - (y ?? -1));
+  });
+}
+const fmtDate = d => { const [y, m, dd] = d.slice(0, 10).split("-"); return `${+dd}. ${+m}. ${y}`; };
+
+function gameCell(td, gid) {
+  td.className = "game";
+  const g = BG.games[gid] || { n: "?" };
+  const img = document.createElement("img"); img.loading = "lazy"; img.alt = ""; if (g.t) img.src = g.t;
+  const name = g.b ? Object.assign(document.createElement("a"), { href: `https://boardgamegeek.com/boardgame/${g.b}`, target: "_blank", rel: "noopener" }) : document.createElement("span");
+  name.textContent = g.n;
+  td.append(img, name);
+}
+
+function renderGames(P) {
+  const m = new Map();
+  P.forEach(p => {
+    let r = m.get(p.g);
+    if (!r) m.set(p.g, r = { g: p.g, name: BG.games[p.g]?.n || "?", plays: 0, mins: 0, mine: 0, wins: 0, last: "", first: "" });
+    r.plays++; r.mins += p.dur;
+    if (p.meIn) { r.mine++; if (p.meWin) r.wins++; }
+    if (p.date > r.last) r.last = p.date;
+    if (!r.first || p.date < r.first) r.first = p.date;
+  });
+  let rows = [...m.values()];
+  rows.forEach(r => { r.hours = r.mins / 60; r.winp = r.mine ? r.wins / r.mine : null; });
+  const q = state.q.trim().toLowerCase();
+  if (q) rows = rows.filter(r => r.name.toLowerCase().includes(q));
+  sortRows(rows, state.gameSort);
+  const maxPlays = Math.max(...rows.map(r => r.plays), 1);
+  document.getElementById("gamesCount").textContent = `${fmt(rows.length)} titulů`;
+  const shown = rows.slice(0, state.gamesLimit);
+  sortableTable(document.getElementById("gamesTbl"), [
+    { label: "#", cell: (td, r, i) => { td.className = "rank"; td.textContent = i + 1; } },
+    { label: "Hra", key: "name", cell: (td, r) => gameCell(td, r.g) },
+    { label: "Partie", key: "plays", num: true, cell: (td, r) => { td.textContent = fmt(r.plays); const s = document.createElement("span"); s.className = "mini"; s.style.width = (40 * r.plays / maxPlays) + "px"; td.append(s); } },
+    { label: "Hodin", key: "hours", num: true, cell: (td, r) => td.textContent = r.hours ? r.hours.toFixed(1).replace(".", ",") : "–" },
+    { label: "Moje výhry", key: "winp", num: true, cell: (td, r) => td.textContent = r.mine ? `${pct(r.wins, r.mine)} (${r.wins}/${r.mine})` : "–" },
+    { label: "Poprvé", key: "first", num: true, cell: (td, r) => td.textContent = fmtDate(r.first) },
+    { label: "Naposledy", key: "last", num: true, cell: (td, r) => td.textContent = fmtDate(r.last) },
+  ], shown, state.gameSort, () => renderGames(currentPlays()));
+  moreBtn("gamesMore", rows.length, "gamesLimit", 20, () => renderGames(currentPlays()));
+}
+
+function renderPlayers(P) {
+  const m = new Map();
+  P.forEach(p => {
+    const meRow = p.ps.find(x => x[0] === ME);
+    const n = p.ps.length;
+    p.ps.forEach(([id, win]) => {
+      if (id === ME) return;
+      let r = m.get(id);
+      if (!r) m.set(id, r = { id, name: BG.players[id] || "?", plays: 0, wins: 0, beat: 0, lost: 0, last: "", games: new Map() });
+      r.plays++; if (win) r.wins++;
+      if (meRow && !BG.games[p.g]?.c) { if (meRow[1] && !win) r.beat++; else if (win && !meRow[1]) r.lost++; }
+      if (p.date > r.last) r.last = p.date;
+      r.games.set(p.g, (r.games.get(p.g) || 0) + 1);
+    });
+  });
+  const rows = [...m.values()];
+  rows.forEach(r => {
+    r.winp = r.wins / r.plays;
+    r.bal = r.beat + r.lost ? r.beat / (r.beat + r.lost) : null;
+    const top = [...r.games.entries()].sort((a, b) => b[1] - a[1])[0];
+    r.top = top ? BG.games[top[0]]?.n || "?" : ""; r.topN = top ? top[1] : 0;
+  });
+  sortRows(rows, state.playerSort);
+  document.getElementById("playersCount").textContent = `${fmt(rows.length)} lidí`;
+  sortableTable(document.getElementById("playersTbl"), [
+    { label: "Hráč", key: "name", cell: (td, r) => td.textContent = r.name },
+    { label: "Partií spolu", key: "plays", num: true, cell: (td, r) => td.textContent = fmt(r.plays) },
+    { label: "Jeho/její výhry", key: "winp", num: true, cell: (td, r) => td.textContent = pct(r.wins, r.plays) },
+    { label: "Já vs. on/a", key: "bal", num: true, cell: (td, r) => { td.textContent = r.bal == null ? "–" : `${r.beat}:${r.lost}`; td.title = "Partie, kde vyhrál jen jeden z vás (bez kooperativních)"; } },
+    { label: "Nejčastější hra", key: "top", cell: (td, r) => { td.textContent = r.top; const s = document.createElement("span"); s.className = "muted"; s.textContent = ` ${r.topN}×`; td.append(s); } },
+  ], rows.slice(0, state.playersLimit), state.playerSort, () => renderPlayers(currentPlays()));
+  moreBtn("playersMore", rows.length, "playersLimit", 15, () => renderPlayers(currentPlays()));
+}
+
+function renderRecent(P) {
+  const rows = P.slice(-12).reverse();
+  sortableTable(document.getElementById("recentTbl"), [
+    { label: "Datum", cell: (td, p) => { td.textContent = fmtDate(p.date); td.style.whiteSpace = "nowrap"; } },
+    { label: "Hra", cell: (td, p) => gameCell(td, p.g) },
+    { label: "Vítěz", cell: (td, p) => {
+      const w = p.ps.filter(x => x[1]).map(x => BG.players[x[0]] || "?");
+      td.textContent = w.length ? w.join(", ") : "–";
+      if (state.loc === "all") { const s = document.createElement("div"); s.className = "muted"; s.style.fontSize = "12px"; s.textContent = locName(p.loc); td.append(s); }
+    } },
+  ], rows, [null, 1], () => {});
+}
+
+function moreBtn(id, total, key, def, rerender) {
+  const b = document.getElementById(id);
+  if (total <= def) { b.hidden = true; return; }
+  b.hidden = false;
+  const all = state[key] >= total;
+  b.textContent = all ? "Zobrazit méně" : `Zobrazit vše (${fmt(total)})`;
+  b.onclick = () => { state[key] = all ? def : Infinity; rerender(); };
+}
+
+document.getElementById("gameSearch").addEventListener("input", e => { state.q = e.target.value; renderGames(currentPlays()); });
+
+// ---------- motiv ----------
+document.getElementById("themeBtn").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("bg-theme", next); } catch (e) {}
+};
+try { const t = localStorage.getItem("bg-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+// ---------- render ----------
+const currentPlays = () => PLAYS.filter(p => byLoc(p) && byYear(p));
+function render() {
+  const P = currentPlays();
+  const scope = [state.loc === "all" ? "všechny lokality" : locName(state.loc), state.year === "all" ? `${YEARS[0]}–${YEARS[YEARS.length - 1]}` : state.year].join(" · ");
+  document.getElementById("sub").textContent = `Statistiky z BG Stats · ${scope}`;
+  renderFilters();
+  renderKpis(P);
+  renderYearChart();
+  renderLocBars();
+  renderHeat();
+  renderSmallCharts(P);
+  renderGames(P);
+  renderPlayers(P);
+  renderRecent(P);
+}
+document.getElementById("foot").textContent = `Data exportována ${fmtDate(BG.exportDate)} · ${fmt(PLAYS.length)} partií celkem · aktualizace: python build.py`;
+render();
+let resizeT, lastW = innerWidth;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; render(); } }, 150); });
+</script>
+</body>
+</html>

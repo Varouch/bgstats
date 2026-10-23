@@ -1,0 +1,3 @@
+# Surový export z BG Stats obsahuje e-mail a další osobní údaje – na web jde jen data.js
+BGStatsExport-*.json
+__pycache__/
