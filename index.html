@@ -90,6 +90,17 @@ select { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; 
   background: var(--surface-1); color: var(--text-primary); }
 .flabel { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
 .theme { margin-left: auto; }
+.pbtn { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.pbtn:hover { color: var(--accent); text-decoration: underline; }
+.profile { margin-bottom: 16px; }
+.profile .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.profile .name { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.profile .meta { color: var(--text-secondary); font-size: 13px; }
+.ptiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.ptile { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.ptile .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptile .l { font-size: 12px; color: var(--text-secondary); }
+.ptile .h { font-size: 11px; color: var(--text-muted); }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .kpi { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
@@ -173,10 +184,12 @@ footer { margin-top: 28px; color: var(--text-muted); font-size: 12px; }
     <div><span class="flabel">Lokalita</span></div>
     <div class="chips" id="locChips"></div>
     <div><span class="flabel">Rok</span><select id="yearSel"></select></div>
+    <div><span class="flabel">Spoluhráč</span><select id="playerSel"></select></div>
     <button class="btn theme" id="themeBtn" type="button">Motiv</button>
   </div>
 
   <div class="kpis" id="kpis"></div>
+  <section class="card profile" id="profile" hidden></section>
 
   <div class="grid">
     <section class="card s7"><h2>Partie podle roku <small id="yearHint">klikni na sloupec pro filtr</small></h2><div id="yearChart"></div></section>
@@ -233,7 +246,7 @@ const firstPlayOfGame = {};
 PLAYS.forEach((p, i) => { if (!(p.g in firstPlayOfGame)) firstPlayOfGame[p.g] = i; });
 PLAYS.forEach((p, i) => p.first = firstPlayOfGame[p.g] === i);
 
-const state = { loc: "all", year: "all", gamesLimit: 20, playersLimit: 15, gameSort: ["plays", -1], playerSort: ["plays", -1], q: "" };
+const state = { loc: "all", year: "all", player: "all", gamesLimit: 20, playersLimit: 15, gameSort: ["plays", -1], playerSort: ["plays", -1], q: "" };
 
 // ---------- tooltip ----------
 const tip = document.getElementById("tip");
@@ -307,13 +320,15 @@ function barChart(container, items, { height = 200, onClick, selected, unit = "p
 // ---------- filtry ----------
 const byLoc = p => state.loc === "all" || p.loc === state.loc;
 const byYear = p => state.year === "all" || p.y === state.year;
+const byPlayer = p => state.player === "all" || p.ps.some(x => x[0] === state.player);
 
 function setLoc(l) { state.loc = state.loc === l ? "all" : l; reset(); render(); }
 function setYear(y) { state.year = state.year === y ? "all" : y; reset(); render(); }
+function setPlayer(id) { state.player = id; reset(); render(); scrollTo({ top: 0, behavior: "smooth" }); }
 function reset() { state.gamesLimit = 20; state.playersLimit = 15; }
 
 function renderFilters() {
-  const yearPlays = PLAYS.filter(byYear);
+  const yearPlays = PLAYS.filter(p => byYear(p) && byPlayer(p));
   const cnt = {};
   yearPlays.forEach(p => cnt[p.loc] = (cnt[p.loc] || 0) + 1);
   const locs = Object.keys(cnt).map(Number).sort((a, b) => cnt[b] - cnt[a]);
@@ -337,7 +352,16 @@ function renderFilters() {
   const o = new Option("Všechny roky", "all"); sel.add(o);
   [...YEARS].reverse().forEach(y => sel.add(new Option(y, y)));
   sel.value = state.year;
+
+  const ps = document.getElementById("playerSel");
+  const pc = new Map();
+  PLAYS.filter(p => byLoc(p) && byYear(p)).forEach(p => p.ps.forEach(([id]) => id !== ME && pc.set(id, (pc.get(id) || 0) + 1)));
+  if (state.player !== "all" && !pc.has(state.player)) pc.set(state.player, 0);
+  ps.replaceChildren(new Option("Všichni", "all"));
+  [...pc.entries()].sort((a, b) => b[1] - a[1]).forEach(([id, n]) => ps.add(new Option(`${BG.players[id] || "?"} (${fmt(n)})`, id)));
+  ps.value = state.player;
 }
+document.getElementById("playerSel").onchange = e => { state.player = e.target.value === "all" ? "all" : +e.target.value; reset(); render(); };
 document.getElementById("yearSel").onchange = e => { state.year = e.target.value === "all" ? "all" : +e.target.value; reset(); render(); };
 
 // ---------- KPI ----------
@@ -367,15 +391,72 @@ function renderKpis(P) {
   });
 }
 
+// ---------- profil spoluhráče ----------
+// Vzájemný výsledek mě a hráče v jedné partii (kooperativní hry se do bilance nepočítají)
+function h2h(p, id) {
+  const me = p.ps.find(x => x[0] === ME), them = p.ps.find(x => x[0] === id);
+  const r = { their: !!(them && them[1]), beat: 0, lost: 0 };
+  if (me && them && !BG.games[p.g]?.c) { if (me[1] && !them[1]) r.beat = 1; else if (them[1] && !me[1]) r.lost = 1; }
+  return r;
+}
+function renderProfile(P) {
+  const box = document.getElementById("profile");
+  if (state.player === "all") { box.hidden = true; return; }
+  box.hidden = false; box.replaceChildren();
+  const id = state.player, name = BG.players[id] || "?";
+  let wins = 0, beat = 0, lost = 0, coop = 0, coopWin = 0, mins = 0, duo = 0;
+  const games = new Map(), locs = new Map();
+  P.forEach(p => {
+    const h = h2h(p, id), isCoop = !!BG.games[p.g]?.c;
+    beat += h.beat; lost += h.lost; mins += p.dur;
+    if (isCoop) { coop++; if (h.their) coopWin++; } else if (h.their) wins++;
+    if (p.ps.length === 2) duo++;
+    if (!isCoop) { let g = games.get(p.g); if (!g) games.set(p.g, g = { n: 0, w: 0 }); g.n++; if (h.their) g.w++; }
+    locs.set(p.loc, (locs.get(p.loc) || 0) + 1);
+  });
+  const comp = P.length - coop;
+  const best = [...games.entries()].filter(([, g]) => g.n >= 5).sort((a, b) => b[1].w / b[1].n - a[1].w / a[1].n || b[1].n - a[1].n)[0];
+  const topLoc = [...locs.entries()].sort((a, b) => b[1] - a[1])[0];
+
+  const top = document.createElement("div"); top.className = "top";
+  const left = document.createElement("div");
+  const nm = document.createElement("div"); nm.className = "name"; nm.textContent = name;
+  const meta = document.createElement("div"); meta.className = "meta";
+  meta.textContent = P.length ? `${fmt(P.length)} partií spolu · první ${fmtDate(P[0].date)} · poslední ${fmtDate(P[P.length - 1].date)}` : "V tomto výběru žádné společné partie";
+  left.append(nm, meta);
+  const close = document.createElement("button"); close.type = "button"; close.className = "btn"; close.textContent = "Zrušit výběr hráče";
+  close.onclick = () => setPlayer("all");
+  top.append(left, close);
+  box.append(top);
+  if (!P.length) return;
+
+  const tiles = [
+    [pct(wins, comp), `Výhry: ${name}`, `${fmt(wins)} z ${fmt(comp)} soutěžních partií`],
+    [beat + lost ? `${beat}:${lost}` : "–", "Já vs. on/a", beat + lost ? `vyhrávám ${pct(beat, beat + lost)} vzájemných` : "bez rozhodnutých partií"],
+    [coop ? pct(coopWin, coop) : "–", "Kooperace spolu", coop ? `${fmt(coopWin)} z ${fmt(coop)} vyhráno` : "žádné kooperativní hry"],
+    [fmt(mins / 60), "Hodin spolu", `${fmt(duo)} partií jen ve dvou`],
+    [locName(topLoc[0]), "Nejčastěji hrajeme", `${fmt(topLoc[1])}× · ${pct(topLoc[1], P.length)}`],
+    best ? [BG.games[best[0]]?.n || "?", "Jeho/její nejlepší hra", `${pct(best[1].w, best[1].n)} výher z ${best[1].n} partií`] : null,
+  ].filter(Boolean);
+  const grid = document.createElement("div"); grid.className = "ptiles";
+  tiles.forEach(([v, l, h]) => {
+    const d = document.createElement("div"); d.className = "ptile";
+    [["v", v], ["l", l], ["h", h]].forEach(([c, t]) => { const x = document.createElement("div"); x.className = c; x.textContent = t; d.append(x); });
+    d.title = String(v);
+    grid.append(d);
+  });
+  box.append(grid);
+}
+
 // ---------- grafy ----------
 function renderYearChart() {
-  const P = PLAYS.filter(byLoc);
+  const P = PLAYS.filter(p => byLoc(p) && byPlayer(p));
   const items = YEARS.map(y => ({ key: y, label: String(y), v: P.filter(p => p.y === y).length }));
   barChart(document.getElementById("yearChart"), items, { onClick: setYear, selected: state.year === "all" ? null : state.year });
 }
 
 function renderLocBars() {
-  const P = PLAYS.filter(byYear);
+  const P = PLAYS.filter(p => byYear(p) && byPlayer(p));
   const cnt = {}; P.forEach(p => cnt[p.loc] = (cnt[p.loc] || 0) + 1);
   const locs = Object.keys(cnt).map(Number).sort((a, b) => cnt[b] - cnt[a]);
   const max = Math.max(...Object.values(cnt), 1);
@@ -395,7 +476,7 @@ function renderLocBars() {
 }
 
 function renderHeat() {
-  const P = PLAYS.filter(byLoc);
+  const P = PLAYS.filter(p => byLoc(p) && byPlayer(p));
   const years = state.year === "all" ? YEARS : [state.year];
   const grid = {}; let max = 1;
   P.forEach(p => { const k = p.y + "-" + p.m; grid[k] = (grid[k] || 0) + p.dur / 60; });
@@ -478,26 +559,37 @@ function renderGames(P) {
   const m = new Map();
   P.forEach(p => {
     let r = m.get(p.g);
-    if (!r) m.set(p.g, r = { g: p.g, name: BG.games[p.g]?.n || "?", plays: 0, mins: 0, mine: 0, wins: 0, last: "", first: "" });
+    if (!r) m.set(p.g, r = { g: p.g, name: BG.games[p.g]?.n || "?", plays: 0, mins: 0, mine: 0, wins: 0, pw: 0, beat: 0, lost: 0, last: "", first: "" });
     r.plays++; r.mins += p.dur;
     if (p.meIn) { r.mine++; if (p.meWin) r.wins++; }
+    if (state.player !== "all") {
+      const h = h2h(p, state.player);
+      if (h.their) r.pw++;
+      r.beat += h.beat; r.lost += h.lost;
+    }
     if (p.date > r.last) r.last = p.date;
     if (!r.first || p.date < r.first) r.first = p.date;
   });
   let rows = [...m.values()];
-  rows.forEach(r => { r.hours = r.mins / 60; r.winp = r.mine ? r.wins / r.mine : null; });
+  rows.forEach(r => { r.hours = r.mins / 60; r.winp = r.mine ? r.wins / r.mine : null; r.pwp = r.pw / r.plays; r.bal = r.beat + r.lost ? r.beat / (r.beat + r.lost) : null; });
   const q = state.q.trim().toLowerCase();
   if (q) rows = rows.filter(r => r.name.toLowerCase().includes(q));
   sortRows(rows, state.gameSort);
   const maxPlays = Math.max(...rows.map(r => r.plays), 1);
   document.getElementById("gamesCount").textContent = `${fmt(rows.length)} titulů`;
   const shown = rows.slice(0, state.gamesLimit);
+  const pname = BG.players[state.player] || "";
+  const extra = state.player === "all" ? [] : [
+    { label: `Výhry: ${pname}`, key: "pwp", num: true, cell: (td, r) => td.textContent = `${pct(r.pw, r.plays)} (${r.pw}/${r.plays})` },
+    { label: "Já vs. on/a", key: "bal", num: true, cell: (td, r) => { td.textContent = r.bal == null ? "–" : `${r.beat}:${r.lost}`; td.title = "Partie, kde vyhrál jen jeden z vás (bez kooperativních)"; } },
+  ];
   sortableTable(document.getElementById("gamesTbl"), [
     { label: "#", cell: (td, r, i) => { td.className = "rank"; td.textContent = i + 1; } },
     { label: "Hra", key: "name", cell: (td, r) => gameCell(td, r.g) },
     { label: "Partie", key: "plays", num: true, cell: (td, r) => { td.textContent = fmt(r.plays); const s = document.createElement("span"); s.className = "mini"; s.style.width = (40 * r.plays / maxPlays) + "px"; td.append(s); } },
     { label: "Hodin", key: "hours", num: true, cell: (td, r) => td.textContent = r.hours ? r.hours.toFixed(1).replace(".", ",") : "–" },
     { label: "Moje výhry", key: "winp", num: true, cell: (td, r) => td.textContent = r.mine ? `${pct(r.wins, r.mine)} (${r.wins}/${r.mine})` : "–" },
+    ...extra,
     { label: "Poprvé", key: "first", num: true, cell: (td, r) => td.textContent = fmtDate(r.first) },
     { label: "Naposledy", key: "last", num: true, cell: (td, r) => td.textContent = fmtDate(r.last) },
   ], shown, state.gameSort, () => renderGames(currentPlays()));
@@ -510,7 +602,7 @@ function renderPlayers(P) {
     const meRow = p.ps.find(x => x[0] === ME);
     const n = p.ps.length;
     p.ps.forEach(([id, win]) => {
-      if (id === ME) return;
+      if (id === ME || id === state.player) return;
       let r = m.get(id);
       if (!r) m.set(id, r = { id, name: BG.players[id] || "?", plays: 0, wins: 0, beat: 0, lost: 0, last: "", games: new Map() });
       r.plays++; if (win) r.wins++;
@@ -529,7 +621,7 @@ function renderPlayers(P) {
   sortRows(rows, state.playerSort);
   document.getElementById("playersCount").textContent = `${fmt(rows.length)} lidí`;
   sortableTable(document.getElementById("playersTbl"), [
-    { label: "Hráč", key: "name", cell: (td, r) => td.textContent = r.name },
+    { label: "Hráč", key: "name", cell: (td, r) => { const b = document.createElement("button"); b.type = "button"; b.className = "pbtn"; b.textContent = r.name; b.title = "Statistiky s tímto hráčem"; b.onclick = () => setPlayer(r.id); td.append(b); } },
     { label: "Partií spolu", key: "plays", num: true, cell: (td, r) => td.textContent = fmt(r.plays) },
     { label: "Jeho/její výhry", key: "winp", num: true, cell: (td, r) => td.textContent = pct(r.wins, r.plays) },
     { label: "Já vs. on/a", key: "bal", num: true, cell: (td, r) => { td.textContent = r.bal == null ? "–" : `${r.beat}:${r.lost}`; td.title = "Partie, kde vyhrál jen jeden z vás (bez kooperativních)"; } },
@@ -572,13 +664,16 @@ document.getElementById("themeBtn").onclick = () => {
 try { const t = localStorage.getItem("bg-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 
 // ---------- render ----------
-const currentPlays = () => PLAYS.filter(p => byLoc(p) && byYear(p));
+const currentPlays = () => PLAYS.filter(p => byLoc(p) && byYear(p) && byPlayer(p));
 function render() {
   const P = currentPlays();
-  const scope = [state.loc === "all" ? "všechny lokality" : locName(state.loc), state.year === "all" ? `${YEARS[0]}–${YEARS[YEARS.length - 1]}` : state.year].join(" · ");
+  const scope = [state.loc === "all" ? "všechny lokality" : locName(state.loc), state.year === "all" ? `${YEARS[0]}–${YEARS[YEARS.length - 1]}` : state.year]
+    .concat(state.player === "all" ? [] : ["s hráčem " + (BG.players[state.player] || "?")]).join(" · ");
   document.getElementById("sub").textContent = `Statistiky z BG Stats · ${scope}`;
+  try { history.replaceState(null, "", state.player === "all" ? location.pathname + location.search : "#hrac=" + state.player); } catch (e) {}
   renderFilters();
   renderKpis(P);
+  renderProfile(P);
   renderYearChart();
   renderLocBars();
   renderHeat();
@@ -588,6 +683,7 @@ function render() {
   renderRecent(P);
 }
 document.getElementById("foot").textContent = `Data exportována ${fmtDate(BG.exportDate)} · ${fmt(PLAYS.length)} partií celkem · aktualizace: python build.py`;
+{ const m = location.hash.match(/hrac=(\d+)/); if (m && BG.players[m[1]]) state.player = +m[1]; }
 render();
 let resizeT, lastW = innerWidth;
 addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; render(); } }, 150); });
